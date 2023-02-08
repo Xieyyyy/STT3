@@ -18,7 +18,27 @@ class EventData(torch.utils.data.Dataset):
         # plus 1 since there could be event type 0, but we use 0 as padding
         self.event_type = [[elem['type_event'] + 1 for elem in inst] for inst in data]
 
+        self.relative_time(self.time)
+
         self.length = len(data)
+
+    def relative_time(self, time):
+        '''transfer the time for a event seq. each time-zero is the first event of a seq'''
+        for inst in time:
+            time_zero = inst[0]
+            inst[0] = 0.1
+            for i in range(len(inst)-1):
+                inst[i+1] -= time_zero - 0.1
+
+
+    def norm_time(self, time):
+        time_min = time[0][0]
+        time_max = time[len(time)-1][-1]
+        diff = time_max - time_min
+        for inst in time:
+            for i in range(len(inst)-1):
+                inst[i] = 1000 * (inst[i] - time_min) / diff
+        time[0][0] = 1e-4
 
     def __len__(self):
         return self.length

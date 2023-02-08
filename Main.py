@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import Utils
@@ -124,7 +125,7 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
     return total_event_ll / total_num_event, total_event_rate / total_num_pred, rmse
 
 
-def train(model, training_data, validation_data, optimizer, scheduler, pred_loss_func, opt):
+def train(model, training_data, validation_data, optimizer, scheduler, pred_loss_func, opt, sw=None):
     """ Start training. """
 
     valid_event_losses = []  # validation log-likelihood
@@ -155,10 +156,18 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
               'Maximum accuracy: {pred: 8.5f}, Minimum RMSE: {rmse: 8.5f}'
               .format(event=max(valid_event_losses), pred=max(valid_pred_losses), rmse=min(valid_rmse)))
 
-        # logging
-        with open(opt.log, 'a') as f:
-            f.write('{epoch}, {ll: 8.5f}, {acc: 8.5f}, {rmse: 8.5f}\n'
-                    .format(epoch=epoch, ll=valid_event, acc=valid_type, rmse=valid_time))
+        if opt.record:
+            sw.add_scalar('loglikelihood/train', train_event, global_step=epoch_i)
+            sw.add_scalar('accuracy/train', train_type, global_step=epoch_i)
+            sw.add_scalar('RMSE/train', train_time, global_step=epoch_i)
+            sw.add_scalar('loglikelihood/valid', valid_event, global_step=epoch_i)
+            sw.add_scalar('accuracy/valid', valid_type, global_step=epoch_i)
+            sw.add_scalar('RMSE/valid', valid_time, global_step=epoch_i)
+
+            # logging
+            with open(opt.log, 'a') as f:
+                f.write('{epoch}, {ll: 8.5f}, {acc: 8.5f}, {rmse: 8.5f}\n'
+                        .format(epoch=epoch, ll=valid_event, acc=valid_type, rmse=valid_time))
 
         scheduler.step()
 
@@ -168,35 +177,41 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-data', type=str, default="data/data_qx/")
+    parser.add_argument('--data', type=str, default="data/data_qx/")
 
     # parser.add_argument('-data', type=str, default="data/data_so/fold1/")
-    parser.add_argument('-epoch', type=int, default=30)
-    parser.add_argument('-batch_size', type=int, default=16)
+    parser.add_argument('--epoch', type=int, default=30)
+    parser.add_argument('--batch_size', type=int, default=16)
 
-    parser.add_argument('-d_model', type=int, default=64)
-    parser.add_argument('-d_rnn', type=int, default=256)
-    parser.add_argument('-d_inner_hid', type=int, default=128)
-    parser.add_argument('-d_k', type=int, default=16)
-    parser.add_argument('-d_v', type=int, default=16)
+    parser.add_argument('--d_model', type=int, default=64)
+    parser.add_argument('--d_rnn', type=int, default=256)
+    parser.add_argument('--d_inner_hid', type=int, default=128)
+    parser.add_argument('--d_k', type=int, default=16)
+    parser.add_argument('--d_v', type=int, default=16)
 
-    parser.add_argument('-n_head', type=int, default=4)
-    parser.add_argument('-n_layers', type=int, default=4)
+    parser.add_argument('--n_head', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=4)
 
-    parser.add_argument('-dropout', type=float, default=0.1)
-    parser.add_argument('-lr', type=float, default=1e-4)
-    parser.add_argument('-smooth', type=float, default=0.1)
+    parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--smooth', type=float, default=0.1)
+    parser.add_argument('--weight_decay', type=float, default=0)
 
-    parser.add_argument('-log', type=str, default='log.txt')
+    parser.add_argument('--log', type=str, default='./logs/baseline.txt')
+    parser.add_argument("--dev", type=str, default="cpu")
+    parser.add_argument('--record', action="store_true")
 
     opt = parser.parse_args()
 
     # default device is CUDA
-    opt.device = torch.device('cpu')
+    opt.device = torch.device(opt.dev)
 
-    # setup the log file
-    with open(opt.log, 'w') as f:
-        f.write('Epoch, Log-likelihood, Accuracy, RMSE\n')
+    if opt.record:
+        sw = SummaryWriter(comment=opt.log)
+
+        # setup the log file
+        with open(opt.log, 'w') as f:
+            f.write('Epoch, Log-likelihood, Accuracy, RMSE\n')
 
     print('[Info] parameters: {}'.format(opt))
 
@@ -220,7 +235,7 @@ def main():
 
     """ optimizer and scheduler """
     optimizer = optim.Adam(filter(lambda x: x.requires_grad, model.parameters()),
-                           opt.lr, betas=(0.9, 0.999), eps=1e-05)
+                           opt.lr, betas=(0.9, 0.999), eps=1e-05, weight_decay=opt.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, 10, gamma=0.5)
 
     """ prediction loss function, either cross entropy or label smoothing """
@@ -234,7 +249,10 @@ def main():
     print('[Info] Number of parameters: {}'.format(num_params))
 
     """ train the model """
-    train(model, trainloader, testloader, optimizer, scheduler, pred_loss_func, opt)
+    if opt.record:
+        train(model, trainloader, testloader, optimizer, scheduler, pred_loss_func, opt, sw)
+    else:
+        train(model, trainloader, testloader, optimizer, scheduler, pred_loss_func, opt)
 
 
 if __name__ == '__main__':

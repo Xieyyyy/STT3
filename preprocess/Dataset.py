@@ -17,6 +17,7 @@ class EventData(torch.utils.data.Dataset):
         self.time_gap = [[elem['time_since_last_event'] for elem in inst] for inst in data]
         # plus 1 since there could be event type 0, but we use 0 as padding
         self.event_type = [[elem['type_event'] + 1 for elem in inst] for inst in data]
+        self.weather_info = [[elem['event_qx'] for elem in inst] for inst in data]
 
         self.relative_time(self.time)
 
@@ -27,16 +28,15 @@ class EventData(torch.utils.data.Dataset):
         for inst in time:
             time_zero = inst[0]
             inst[0] = 0.1
-            for i in range(len(inst)-1):
-                inst[i+1] -= time_zero - 0.1
-
+            for i in range(len(inst) - 1):
+                inst[i + 1] -= time_zero - 0.1
 
     def norm_time(self, time):
         time_min = time[0][0]
-        time_max = time[len(time)-1][-1]
+        time_max = time[len(time) - 1][-1]
         diff = time_max - time_min
         for inst in time:
-            for i in range(len(inst)-1):
+            for i in range(len(inst) - 1):
                 inst[i] = 1000 * (inst[i] - time_min) / diff
         time[0][0] = 1e-4
 
@@ -45,7 +45,7 @@ class EventData(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         """ Each returned element is a list, which represents an event stream """
-        return self.time[idx], self.time_gap[idx], self.event_type[idx]
+        return self.time[idx], self.time_gap[idx], self.event_type[idx], self.weather_info[idx]
 
 
 def pad_time(insts):
@@ -56,6 +56,16 @@ def pad_time(insts):
     batch_seq = np.array([
         inst + [Constants.PAD] * (max_len - len(inst))
         for inst in insts])
+
+    return torch.tensor(batch_seq, dtype=torch.float32)
+
+
+def pad_weather(insts):
+    max_len = max(len(inst) for inst in insts)
+
+    batch_seq = np.array([inst +
+                          [[Constants.PAD for _ in range(len(insts[0][0]))] for _ in range(max_len - len(inst))] for
+                          inst in insts])
 
     return torch.tensor(batch_seq, dtype=torch.float32)
 
@@ -75,11 +85,12 @@ def pad_type(insts):
 def collate_fn(insts):
     """ Collate function, as required by PyTorch. """
 
-    time, time_gap, event_type = list(zip(*insts))
+    time, time_gap, event_type, weather_info = list(zip(*insts))
     time = pad_time(time)
     time_gap = pad_time(time_gap)
     event_type = pad_type(event_type)
-    return time, time_gap, event_type
+    weather_info = pad_weather(weather_info)
+    return time, time_gap, event_type, weather_info
 
 
 def get_dataloader(data, batch_size, shuffle=True):

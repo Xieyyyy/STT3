@@ -12,7 +12,7 @@ from tqdm import tqdm
 import Utils
 import transformer.Constants as Constants
 from preprocess.Dataset import get_dataloader
-from transformer.Models import Transformer
+from transformer.Models import Model
 
 
 def prepare_dataloader(opt):
@@ -51,12 +51,12 @@ def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
     for batch in tqdm(training_data, mininterval=2,
                       desc='  - (Training)   ', leave=False):
         """ prepare data """
-        event_time, time_gap, event_type = map(lambda x: x.to(opt.device), batch)
+        event_time, time_gap, event_type, weather_info = map(lambda x: x.to(opt.device), batch)
 
         """ forward """
         optimizer.zero_grad()
 
-        enc_out, prediction = model(event_type, event_time)
+        enc_out, prediction = model(event_type, event_time, weather_info)
 
         """ backward """
         # negative log-likelihood
@@ -103,10 +103,10 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
         for batch in tqdm(validation_data, mininterval=2,
                           desc='  - (Validation) ', leave=False):
             """ prepare data """
-            event_time, time_gap, event_type = map(lambda x: x.to(opt.device), batch)
+            event_time, time_gap, event_type, weather_info = map(lambda x: x.to(opt.device), batch)
 
             """ forward """
-            enc_out, prediction = model(event_type, event_time)
+            enc_out, prediction = model(event_type, event_time, weather_info)
 
             """ compute loss """
             event_ll, non_event_ll = Utils.log_likelihood(model, enc_out, event_time, event_type)
@@ -184,13 +184,13 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16)
 
     parser.add_argument('--d_model', type=int, default=64)
-    parser.add_argument('--d_rnn', type=int, default=256)
+    parser.add_argument('--d_value', type=int, default=6)
     parser.add_argument('--d_inner_hid', type=int, default=128)
     parser.add_argument('--d_k', type=int, default=16)
     parser.add_argument('--d_v', type=int, default=16)
 
     parser.add_argument('--n_head', type=int, default=4)
-    parser.add_argument('--n_layers', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=2)
 
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -219,10 +219,10 @@ def main():
     trainloader, testloader, num_types = prepare_dataloader(opt)
 
     """ prepare model """
-    model = Transformer(
+    model = Model(
         num_types=num_types,
         d_model=opt.d_model,
-        d_rnn=opt.d_rnn,
+        enc_dim=opt.d_value,
         d_inner=opt.d_inner_hid,
         n_layers=opt.n_layers,
         n_head=opt.n_head,

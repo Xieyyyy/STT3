@@ -202,8 +202,8 @@ class Model(nn.Module):
         )
 
         self.combine_encoder = ValueEncoder(
-            enc_dim=d_model * 2,
-            d_model=d_model * 2,
+            enc_dim=d_model,
+            d_model=d_model,
             d_inner=d_inner,
             n_layers=n_layers,
             n_head=n_head,
@@ -216,7 +216,7 @@ class Model(nn.Module):
         self.num_types = num_types
 
         # convert hidden vectors into a scalar
-        self.linear = nn.Linear(d_model * 2, num_types)
+        self.linear = nn.Linear(d_model, num_types)
 
         # parameter for the weight of time difference
         self.alpha = nn.Parameter(torch.tensor(-0.1))
@@ -228,10 +228,10 @@ class Model(nn.Module):
         # self.rnn = RNN_layers(d_model, d_rnn)
 
         # prediction of next time stamp
-        self.time_predictor = Predictor(d_model * 2, 1)
+        self.time_predictor = Predictor(d_model, 1)
 
         # prediction of next event type
-        self.type_predictor = Predictor(d_model * 2, num_types)
+        self.type_predictor = Predictor(d_model, num_types)
 
     def forward(self, event_type, event_time, weather_info):
         """
@@ -252,7 +252,7 @@ class Model(nn.Module):
         event_enc_output = self.event_encoder(event_type, event_time, non_pad_mask)
         weather_enc_output = self.value_encoder(weather_info, event_time)
 
-        combine_enc_output = self.combine_encoder(torch.cat([event_enc_output, weather_enc_output], dim=-1), event_time)
+        combine_enc_output = self.combine_encoder((event_enc_output + weather_enc_output) / 2, event_time)
         # enc_output = self.rnn(enc_output, non_pad_mask)
 
         time_prediction = self.time_predictor(combine_enc_output, non_pad_mask)

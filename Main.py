@@ -70,8 +70,9 @@ def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
         se = Utils.time_loss(prediction[1], event_time)
 
         # SE is usually large, scale it to stabilize training
-        scale_time_loss = 100
-        loss = event_loss + pred_loss + se / scale_time_loss
+        # scale_time_loss = 100
+        # loss = event_loss + pred_loss + se / scale_time_loss
+        loss = event_loss + pred_loss + se * opt.scaletimeloss
         loss.backward()
 
         """ update parameters """
@@ -191,6 +192,7 @@ def main():
 
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--n_layers', type=int, default=2)
+    parser.add_argument('--scaletimeloss', type=float, default=1.0)
 
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--lr', type=float, default=1e-4)

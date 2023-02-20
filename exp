@@ -1,4 +1,5 @@
-python Main.py --dev cuda:3 --record --log ./logs/baseline.txt --epoch 100
-python Main.py --dev cuda:4 --record --log ./logs/weight_decay1e-4.txt --epoch 100 --weight_decay 1e-4
-python Main.py --dev cuda:5 --record --log ./logs/weight_decay1e-4_timenorm.txt --epoch 100 --weight_decay 1e-4
-python Main.py --dev cuda:5 --record --log ./logs/weight_decay1e-3_timenorm_add_weather.txt --epoch 100 --weight_decay 1e-3
+python Main.py --dev cuda:7 --record --log ./logs/baseline.txt --epoch 100 --weight_decay 1e-3
+python Main.py --dev cuda:6 --record --log ./logs/add_timescale.txt --epoch 100 --weight_decay 1e-3
+python Main.py --dev cuda:6 --record --log ./logs/timescale1e-3.txt --epoch 100 --weight_decay 1e-3 --scaletimeloss 1e-3
+python Main.py --dev cuda:7 --record --log ./logs/timescale1e-3_dp02.txt --epoch 100 --weight_decay 1e-3 --scaletimeloss 1e-3 --dropout 0.2
+python Main.py --dev cuda:5 --record --log ./logs/timescale1e-4.txt --epoch 100 --weight_decay 1e-3 --scaletimeloss 1e-4

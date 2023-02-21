@@ -1,1 +1,2 @@
 python Main.py --dev cuda:6 --record --log ./logs/baseline.txt --epoch 100
+python Main.py --dev cuda:7 --record --log ./logs/baseline_probattn.txt --epoch 100

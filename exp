@@ -1,1 +1,2 @@
 python Main.py --dev cuda:6 --record --log ./logs/baseline.txt --epoch 100
+python Main.py --dev cuda:5 --record --log ./logs/baseline_learntimeenc.txt --epoch 100

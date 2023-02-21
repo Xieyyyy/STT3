@@ -45,6 +45,9 @@ class ValueEncoder(nn.Module):
             device=device)
 
         self.value_emb = nn.Linear(enc_dim, d_model)
+        self.time_enc_stack = nn.ModuleList([
+            nn.Linear(d_model, d_model) for _ in range(n_layers)
+        ])
         self.layer_stack = nn.ModuleList([
             ValueEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
             for _ in range(n_layers)])
@@ -63,8 +66,8 @@ class ValueEncoder(nn.Module):
     def forward(self, enc_in, event_time):
         tem_enc = self.temporal_enc(event_time)
         enc_output = self.value_emb(enc_in)
-        for enc_layer in self.layer_stack:
-            enc_output += tem_enc
+        for enc_layer, time_enc_layer in zip(self.layer_stack, self.time_enc_stack):
+            enc_output += time_enc_layer(tem_enc)
             enc_output, _ = enc_layer(
                 enc_output)
         return enc_output
@@ -88,6 +91,10 @@ class EventEncoder(nn.Module):
 
         # event type embedding
         self.event_emb = nn.Embedding(num_types + 1, d_model, padding_idx=Constants.PAD)
+
+        self.time_enc_stack = nn.ModuleList([
+            nn.Linear(d_model, d_model) for _ in range(n_layers)
+        ])
 
         self.layer_stack = nn.ModuleList([
             EventEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
@@ -121,8 +128,8 @@ class EventEncoder(nn.Module):
         tem_enc = self.temporal_enc(event_time, non_pad_mask)
         enc_output = self.event_emb(event_type)
 
-        for enc_layer in self.layer_stack:
-            enc_output += tem_enc
+        for enc_layer, time_enc_layer in zip(self.layer_stack, self.time_enc_stack):
+            enc_output += time_enc_layer(tem_enc)
             enc_output, _ = enc_layer(
                 enc_output,
                 non_pad_mask=non_pad_mask,

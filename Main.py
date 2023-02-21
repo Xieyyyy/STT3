@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import Utils
@@ -192,12 +192,12 @@ def main():
 
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--n_layers', type=int, default=2)
-    parser.add_argument('--scaletimeloss', type=float, default=1.0)
+    parser.add_argument('--scaletimeloss', type=float, default=1e-3)
 
-    parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--dropout', type=float, default=0.)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--smooth', type=float, default=0.1)
-    parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--weight_decay', type=float, default=1e-3)
 
     parser.add_argument('--log', type=str, default='./logs/baseline.txt')
     parser.add_argument("--dev", type=str, default="cpu")

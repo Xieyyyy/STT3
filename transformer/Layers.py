@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from transformer.SubLayers import MultiHeadAttention, PositionwiseFeedForward
+from transformer.SubLayers import PositionwiseFeedForward, MultiHeadProbAttentionLayer
 
 
 class EventEncoderLayer(nn.Module):
@@ -8,7 +8,7 @@ class EventEncoderLayer(nn.Module):
 
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
         super(EventEncoderLayer, self).__init__()
-        self.slf_attn = MultiHeadAttention(
+        self.slf_attn = MultiHeadProbAttentionLayer(
             n_head, d_model, d_k, d_v, dropout=dropout, normalize_before=normalize_before)
         self.pos_ffn = PositionwiseFeedForward(
             d_model, d_inner, dropout=dropout, normalize_before=normalize_before)
@@ -27,7 +27,7 @@ class EventEncoderLayer(nn.Module):
 class ValueEncoderLayer(nn.Module):
     def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
         super(ValueEncoderLayer, self).__init__()
-        self.slf_attn = MultiHeadAttention(
+        self.slf_attn = MultiHeadProbAttentionLayer(
             n_head, d_model, d_k, d_v, dropout=dropout, normalize_before=normalize_before)
         self.pos_ffn = PositionwiseFeedForward(
             d_model, d_inner, dropout=dropout, normalize_before=normalize_before)

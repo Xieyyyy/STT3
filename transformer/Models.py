@@ -136,11 +136,12 @@ class Predictor(nn.Module):
     def __init__(self, dim, num_types):
         super().__init__()
 
-        self.linear = nn.Linear(dim, num_types, bias=False)
-        nn.init.xavier_normal_(self.linear.weight)
+        self.MLP = nn.Sequential(nn.Linear(dim, dim, bias=True),
+                                 nn.ReLU(),
+                                 nn.Linear(dim, num_types, bias=True))
 
     def forward(self, data, non_pad_mask):
-        out = self.linear(data)
+        out = self.MLP(data)
         out = out * non_pad_mask
         return out
 

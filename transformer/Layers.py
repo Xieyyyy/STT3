@@ -6,10 +6,11 @@ from transformer.SubLayers import MultiHeadAttention, PositionwiseFeedForward
 class EventEncoderLayer(nn.Module):
     """ Compose with two layers """
 
-    def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
+    def __init__(self, attention_layer, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
         super(EventEncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(
-            n_head, d_model, d_k, d_v, dropout=dropout, normalize_before=normalize_before)
+            n_head, d_model, d_k, d_v, dropout=dropout,
+            normalize_before=normalize_before) if attention_layer is None else attention_layer
         self.pos_ffn = PositionwiseFeedForward(
             d_model, d_inner, dropout=dropout, normalize_before=normalize_before)
 
@@ -25,10 +26,11 @@ class EventEncoderLayer(nn.Module):
 
 
 class ValueEncoderLayer(nn.Module):
-    def __init__(self, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
+    def __init__(self, attention_layer, d_model, d_inner, n_head, d_k, d_v, dropout=0.1, normalize_before=True):
         super(ValueEncoderLayer, self).__init__()
         self.slf_attn = MultiHeadAttention(
-            n_head, d_model, d_k, d_v, dropout=dropout, normalize_before=normalize_before)
+            n_head, d_model, d_k, d_v, dropout=dropout,
+            normalize_before=normalize_before) if attention_layer is None else attention_layer
         self.pos_ffn = PositionwiseFeedForward(
             d_model, d_inner, dropout=dropout, normalize_before=normalize_before)
 

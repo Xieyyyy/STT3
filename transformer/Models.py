@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import transformer.Constants as Constants
 from transformer.Layers import EventEncoderLayer, ValueEncoderLayer
+from transformer.SubLayers import MultiHeadAttention
 
 
 def get_non_pad_mask(seq):
@@ -35,7 +36,7 @@ def get_subsequent_mask(seq):
 
 class ValueEncoder(nn.Module):
     def __init__(self, enc_dim, d_model, d_inner,
-                 n_layers, n_head, d_k, d_v, dropout, device):
+                 n_layers, n_head, d_k, d_v, dropout, device, attention_layers=None):
         super(ValueEncoder, self).__init__()
         self.d_model = d_model
 
@@ -46,8 +47,11 @@ class ValueEncoder(nn.Module):
 
         self.value_emb = nn.Linear(enc_dim, d_model)
         self.layer_stack = nn.ModuleList([
-            ValueEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
-            for _ in range(n_layers)])
+            ValueEncoderLayer(None, d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
+            for _ in range(n_layers)]) if attention_layers is None else nn.ModuleList([
+            ValueEncoderLayer(attention_layers[i], d_model, d_inner, n_head, d_k, d_v, dropout=dropout,
+                              normalize_before=False)
+            for i in range(n_layers)])
 
     def temporal_enc(self, time):
         """
@@ -76,7 +80,7 @@ class EventEncoder(nn.Module):
     def __init__(
             self,
             num_types, d_model, d_inner,
-            n_layers, n_head, d_k, d_v, dropout, device):
+            n_layers, n_head, d_k, d_v, dropout, device, attention_layers=None):
         super().__init__()
 
         self.d_model = d_model
@@ -90,8 +94,11 @@ class EventEncoder(nn.Module):
         self.event_emb = nn.Embedding(num_types + 1, d_model, padding_idx=Constants.PAD)
 
         self.layer_stack = nn.ModuleList([
-            EventEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
-            for _ in range(n_layers)])
+            EventEncoderLayer(None, d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
+            for _ in range(n_layers)]) if attention_layers is None else nn.ModuleList([
+            EventEncoderLayer(attention_layers[i], d_model, d_inner, n_head, d_k, d_v, dropout=dropout,
+                              normalize_before=False)
+            for i in range(n_layers)])
 
     def temporal_enc(self, time, non_pad_mask):
         """
@@ -177,6 +184,9 @@ class Model(nn.Module):
             n_layers=4, n_head=4, d_k=64, d_v=64, dropout=0.1, device="cpu"):
         super().__init__()
 
+        attention_layers = nn.ModuleList([MultiHeadAttention(
+            n_head, d_model, d_k, d_v, dropout=dropout) for _ in range(n_layers)])
+
         self.event_encoder = EventEncoder(
             num_types=num_types,
             d_model=d_model,
@@ -186,7 +196,8 @@ class Model(nn.Module):
             d_k=d_k,
             d_v=d_v,
             dropout=dropout,
-            device=device
+            device=device,
+            attention_layers=attention_layers
         )
 
         self.value_encoder = ValueEncoder(
@@ -198,7 +209,8 @@ class Model(nn.Module):
             d_k=d_k,
             d_v=d_v,
             dropout=dropout,
-            device=device
+            device=device,
+            attention_layers=attention_layers
         )
 
         self.combine_encoder = ValueEncoder(

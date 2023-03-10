@@ -41,16 +41,16 @@ def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
 
     num_samples = 100
 
-    diff_time = (time[:, 1:] - time[:, :-1]) * non_pad_mask[:, 1:]
-    temp_time = diff_time.unsqueeze(2) * \
+    diff_time = (time[..., 1:] - time[..., :-1]) * non_pad_mask[..., 1:]
+    temp_time = diff_time.unsqueeze(-1) * \
                 torch.rand([*diff_time.size(), num_samples], device=data.device)
-    temp_time /= (time[:, :-1] + 1).unsqueeze(2)
+    temp_time /= (time[..., :-1] + 1).unsqueeze(-1)
 
-    temp_hid = model.linear(data)[:, 1:, :]
-    temp_hid = torch.sum(temp_hid * type_mask[:, 1:, :], dim=2, keepdim=True)
+    temp_hid = model.linear(data)[:, :, 1:, :]
+    temp_hid = torch.sum(temp_hid * type_mask[:, :, 1:, :], dim=-1, keepdim=True)
 
     all_lambda = softplus(temp_hid + model.alpha * temp_time, model.beta)
-    all_lambda = torch.sum(all_lambda, dim=2) / num_samples
+    all_lambda = torch.sum(all_lambda, dim=-1) / num_samples
 
     unbiased_integral = all_lambda * diff_time
     return unbiased_integral
@@ -67,7 +67,7 @@ def log_likelihood(model, data, time, types):
 
     all_hid = model.linear(data)
     all_lambda = softplus(all_hid, model.beta)
-    type_lambda = torch.sum(all_lambda * type_mask, dim=2)
+    type_lambda = torch.sum(all_lambda * type_mask, dim=-1)
 
     # event log-likelihood
     event_ll = compute_event(type_lambda, non_pad_mask)
@@ -85,8 +85,8 @@ def type_loss(prediction, types, loss_func):
     """ Event prediction loss, cross entropy or label smoothing. """
 
     # convert [1,2,3] based types to [0,1,2]; also convert padding events to -1
-    truth = types[:, 1:] - 1
-    prediction = prediction[:, :-1, :]
+    truth = types[..., 1:] - 1
+    prediction = prediction[:, :, :-1, :]
 
     pred_type = torch.max(prediction, dim=-1)[1]
     correct_num = torch.sum(pred_type == truth)
@@ -106,8 +106,8 @@ def time_loss(prediction, event_time):
 
     prediction.squeeze_(-1)
 
-    true = event_time[:, 1:] - event_time[:, :-1]
-    prediction = prediction[:, :-1]
+    true = event_time[..., 1:] - event_time[..., :-1]
+    prediction = prediction[..., :-1]
 
     # event time gap prediction
     diff = prediction - true

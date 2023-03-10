@@ -15,25 +15,25 @@ class EventData(torch.utils.data.Dataset):
         each dictionary contains: time_since_start, time_since_last_event, type_event
         """
         print("load time...")
-        with open(file + domain + "/" + domain + "_time_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_time.pkl", "rb") as f:
             self.time = pickle.load(f)
         print("load time gap...")
-        with open(file + domain + "/" + domain + "_time_gap_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_time_gap.pkl", "rb") as f:
             self.time_gap = pickle.load(f)
         print("load event type...")
-        with open(file + domain + "/" + domain + "_event_type_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_event_type.pkl", "rb") as f:
             self.event_type = pickle.load(f)
         print("load weather info...")
-        with open(file + domain + "/" + domain + "_weather_info_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_weather_info.pkl", "rb") as f:
             self.weather_info = pickle.load(f)
         print("load weather info next...")
-        with open(file + domain + "/" + domain + "_weather_info_next_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_weather_info_next.pkl", "rb") as f:
             self.weather_info_next = pickle.load(f)
         print("load relative time 1...")
-        with open(file + domain + "/" + domain + "_relative_time1_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_relative_time1.pkl", "rb") as f:
             self.relative_time1 = pickle.load(f)
         print("load relative time 2...")
-        with open(file + domain + "/" + domain + "_relative_time2_part.pkl", "rb") as f:
+        with open(file + domain + "/" + domain + "_relative_time2.pkl", "rb") as f:
             self.relative_time2 = pickle.load(f)
 
         # self.relative_time(self.time)

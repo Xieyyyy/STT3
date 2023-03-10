@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,11 +59,11 @@ def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
 def log_likelihood(model, data, time, types):
     """ Log-likelihood of sequence. """
 
-    non_pad_mask = get_non_pad_mask(types).squeeze(2)
+    non_pad_mask = get_non_pad_mask(types).squeeze(-1)  # [b,n,l]
 
-    type_mask = torch.zeros([*types.size(), model.num_types], device=data.device)
+    type_mask = torch.zeros([*types.size(), model.num_types], device=data.device)  # [b,n,l,types]
     for i in range(model.num_types):
-        type_mask[:, :, i] = (types == i + 1).bool().to(data.device)
+        type_mask[..., i] = (types == i + 1).bool().to(data.device)
 
     all_hid = model.linear(data)
     all_lambda = softplus(all_hid, model.beta)

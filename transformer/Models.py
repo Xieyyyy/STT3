@@ -8,8 +8,8 @@ from transformer.Layers import EventEncoderLayer, ValueEncoderLayer
 
 def get_non_pad_mask(seq):
     """ Get the non-padding positions. """
-    # [B,L]
-    assert seq.dim() == 2
+    # [B,N,L]
+    assert seq.dim() == 3
     return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
 
 
@@ -17,20 +17,20 @@ def get_attn_key_pad_mask(seq_k, seq_q):
     """ For masking out the padding part of key sequence. """
 
     # expand to fit the shape of key query attention matrix
-    len_q = seq_q.size(1)
+    len_q = seq_q.size(2)
     padding_mask = seq_k.eq(Constants.PAD)
-    padding_mask = padding_mask.unsqueeze(1).expand(-1, len_q, -1)  # b x lq x lk
+    padding_mask = padding_mask.unsqueeze(2).expand(-1, -1, len_q, -1)  # b x lq x lk
     return padding_mask
 
 
 def get_subsequent_mask(seq):
     """ For masking out the subsequent info, i.e., masked self-attention. """
 
-    sz_b, len_s = seq.size()
+    sz_b, n, len_s = seq.size()
     subsequent_mask = torch.triu(
         torch.ones((len_s, len_s), device=seq.device, dtype=torch.uint8), diagonal=1)
-    subsequent_mask = subsequent_mask.unsqueeze(0).expand(sz_b, -1, -1)  # b x ls x ls
-    return subsequent_mask
+    subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(0).expand(sz_b, n, -1, -1)  # b x n x ls x ls
+    return subsequent_mask  # b x n x ls x ls
 
 
 class ValueEncoder(nn.Module):
@@ -60,13 +60,13 @@ class ValueEncoder(nn.Module):
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
         return result
 
-    def forward(self, enc_in, event_time):
+    def forward(self, enc_in, event_time, adj_mx):
         tem_enc = self.temporal_enc(event_time)
         enc_output = self.value_emb(enc_in)
         for enc_layer in self.layer_stack:
             enc_output += tem_enc
             enc_output, _ = enc_layer(
-                enc_output)
+                enc_output, adj_mx)
         return enc_output
 
 
@@ -104,12 +104,12 @@ class EventEncoder(nn.Module):
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
         return result * non_pad_mask
 
-    def forward(self, event_type, event_time, non_pad_mask):
+    def forward(self, event_type, event_time, non_pad_mask, adj_mx):
         """ Encode event sequences via masked self-attention. """
 
-        # event_type: [B,L]
-        # event_time: [B,L]
-        # non_pad_mask: [B,L,1]\in{0,1}
+        # event_type: [B,L] -> [B,N,L]
+        # event_time: [B,L] -> [B,N,L]
+        # non_pad_mask: [B,L,1]\in{0,1} -> [B,N,L,1]
 
         # prepare attention masks
         # slf_attn_mask is where we cannot look, i.e., the future and the padding
@@ -125,6 +125,7 @@ class EventEncoder(nn.Module):
             enc_output += tem_enc
             enc_output, _ = enc_layer(
                 enc_output,
+                adj_mx,
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask)
         return enc_output
@@ -233,7 +234,7 @@ class Model(nn.Module):
         # prediction of next event type
         self.type_predictor = Predictor(d_model * 2, num_types)
 
-    def forward(self, event_type, event_time, weather_info):
+    def forward(self, event_type, event_time, weather_info, adj_mx):
         """
         Return the hidden representations and predictions.
         For a sequence (l_1, l_2, ..., l_N), we predict (l_2, ..., l_N, l_{N+1}).
@@ -249,10 +250,11 @@ class Model(nn.Module):
 
         # non_pad_mask: [B,L,1]\in{0,1}
         # event_time: [B,L]
-        event_enc_output = self.event_encoder(event_type, event_time, non_pad_mask)
-        weather_enc_output = self.value_encoder(weather_info, event_time)
+        event_enc_output = self.event_encoder(event_type, event_time, non_pad_mask, adj_mx)
+        weather_enc_output = self.value_encoder(weather_info, event_time, adj_mx)
 
-        combine_enc_output = self.combine_encoder(torch.cat([event_enc_output, weather_enc_output], dim=-1), event_time)
+        combine_enc_output = self.combine_encoder(torch.cat([event_enc_output, weather_enc_output], dim=-1), event_time,
+                                                  adj_mx)
         # enc_output = self.rnn(enc_output, non_pad_mask)
 
         time_prediction = self.time_predictor(combine_enc_output, non_pad_mask)

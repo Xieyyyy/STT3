@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import Utils
@@ -18,24 +18,28 @@ from transformer.Models import Model
 def prepare_dataloader(opt):
     """ Load data and prepare dataloader. """
 
-    def load_data(name, dict_name):
-        with open(name, 'rb') as f:
-            data = pickle.load(f, encoding='latin-1')
-            # print(data.keys())
-            num_types = data['dim_process']
-            data = data[dict_name]
-            return data, int(num_types)
+    # def load_data(name, dict_name):
+    #     with open(name, 'rb') as f:
+    #         data = pickle.load(f, encoding='latin-1')
+    #         # print(data.keys())
+    #         num_types = data['dim_process']
+    #         data = data[dict_name]
+    #         return data, int(num_types)
+    #
+    # print('[Info] Loading train data...')
+    # train_data, num_types = load_data(opt.data + 'train.pkl', 'train')
+    # # print('[Info] Loading dev data...')
+    # # dev_data, _ = load_data(opt.data + 'dev.pkl', 'dev')
+    # print('[Info] Loading test data...')
+    # test_data, _ = load_data(opt.data + 'test.pkl', 'devtest')
 
     print('[Info] Loading train data...')
-    train_data, num_types = load_data(opt.data + 'train.pkl', 'train')
-    # print('[Info] Loading dev data...')
-    # dev_data, _ = load_data(opt.data + 'dev.pkl', 'dev')
+    trainloader = get_dataloader(opt.data, opt.batch_size, shuffle=False, domain="train")
     print('[Info] Loading test data...')
-    test_data, _ = load_data(opt.data + 'test.pkl', 'devtest')
-
-    trainloader = get_dataloader(train_data, opt.batch_size, shuffle=False)
-    testloader = get_dataloader(test_data, opt.batch_size, shuffle=False)
-    return trainloader, testloader, num_types
+    testloader = get_dataloader(opt.data, opt.batch_size, shuffle=False, domain="test")
+    with open(opt.data + "adj_mx.pkl", "rb") as f:
+        adj_mx = pickle.load(f)
+    return trainloader, testloader, opt.num_types, adj_mx
 
 
 def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
@@ -51,12 +55,13 @@ def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
     for batch in tqdm(training_data, mininterval=2,
                       desc='  - (Training)   ', leave=False):
         """ prepare data """
-        event_time, time_gap, event_type, weather_info = map(lambda x: x.to(opt.device), batch)
+        event_time, time_gap, event_type, weather_info, weather_info_next, relative_time1, relative_time2 = map(
+            lambda x: x.to(opt.device), batch)
 
         """ forward """
         optimizer.zero_grad()
 
-        enc_out, prediction = model(event_type, event_time, weather_info)
+        enc_out, prediction = model(event_type, event_time, weather_info, opt.adj_mx)
 
         """ backward """
         # negative log-likelihood
@@ -178,7 +183,7 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--data', type=str, default="data/data_qx/")
+    parser.add_argument('--data', type=str, default="data/data_qx_space/")
 
     # parser.add_argument('-data', type=str, default="data/data_so/fold1/")
     parser.add_argument('--epoch', type=int, default=30)
@@ -189,6 +194,7 @@ def main():
     parser.add_argument('--d_inner_hid', type=int, default=128)
     parser.add_argument('--d_k', type=int, default=16)
     parser.add_argument('--d_v', type=int, default=16)
+    parser.add_argument('--num_types', type=int, default=10)
 
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--n_layers', type=int, default=2)
@@ -218,7 +224,8 @@ def main():
     print('[Info] parameters: {}'.format(opt))
 
     """ prepare dataloader """
-    trainloader, testloader, num_types = prepare_dataloader(opt)
+    trainloader, testloader, num_types, opt.adj_mx = prepare_dataloader(opt)
+    opt.adj_mx = torch.Tensor(opt.adj_mx).to(opt.device)
 
     """ prepare model """
     model = Model(

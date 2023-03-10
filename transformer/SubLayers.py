@@ -1,10 +1,18 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import transformer.Constants as Constants
 from transformer.Modules import ScaledDotProductAttention
+
+
+class GrapgConv(nn.Module):
+    def __init__(self, d_in, d_out, bias):
+        super(GrapgConv, self).__init__()
+        self.w = nn.Linear(d_in, d_out, bias=bias)
+
+    def forward(self, x, adj_mx):
+        x = torch.einsum("bnld,nm->bmld", (x, adj_mx))
+        return self.w(x)
 
 
 class MultiHeadAttention(nn.Module):
@@ -18,24 +26,24 @@ class MultiHeadAttention(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
 
-        self.w_qs = nn.Linear(d_model, n_head * d_k, bias=False)
-        self.w_ks = nn.Linear(d_model, n_head * d_k, bias=False)
-        self.w_vs = nn.Linear(d_model, n_head * d_v, bias=False)
-        nn.init.xavier_uniform_(self.w_qs.weight)
-        nn.init.xavier_uniform_(self.w_ks.weight)
-        nn.init.xavier_uniform_(self.w_vs.weight)
+        self.graphconv_q = GrapgConv(d_model, d_model, bias=False)
+        self.graphconv_k = GrapgConv(d_model, d_model, bias=False)
+        self.graphconv_v = GrapgConv(d_model, d_model, bias=False)
+        nn.init.xavier_uniform_(self.graphconv_q.w.weight)
+        nn.init.xavier_uniform_(self.graphconv_k.w.weight)
+        nn.init.xavier_uniform_(self.graphconv_v.w.weight)
 
-        self.fc = nn.Linear(d_v * n_head, d_model)
-        nn.init.xavier_uniform_(self.fc.weight)
+        self.graphconv_fc = GrapgConv(d_model, d_model, bias=False)
+        nn.init.xavier_uniform_(self.graphconv_fc.w.weight)
 
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
 
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q, k, v, adj_mx, mask=None):
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
-        sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
+        sz_b, sz_node, len_q, len_k, len_v = q.size(0), q.size(1), q.size(2), k.size(2), v.size(2)
 
         residual = q
         if self.normalize_before:
@@ -43,12 +51,12 @@ class MultiHeadAttention(nn.Module):
 
         # Pass through the pre-attention projection: b x lq x (n*dv)
         # Separate different heads: b x lq x n x dv
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+        q = self.graphconv_q(q, adj_mx).view(sz_b, -1, len_q, n_head, d_k)
+        k = self.graphconv_k(k, adj_mx).view(sz_b, -1, len_k, n_head, d_k)
+        v = self.graphconv_v(v, adj_mx).view(sz_b, -1, len_v, n_head, d_v)
 
         # Transpose for attention dot product: b x n x lq x dv
-        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        q, k, v = q.transpose(2, 3), k.transpose(2, 3), v.transpose(2, 3)
 
         if mask is not None:
             mask = mask.unsqueeze(1)  # For head axis broadcasting.
@@ -57,8 +65,8 @@ class MultiHeadAttention(nn.Module):
 
         # Transpose to move the head dimension back: b x lq x n x dv
         # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
-        output = output.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
-        output = self.dropout(self.fc(output))
+        output = output.transpose(2, 3).contiguous().view(sz_b, sz_node, len_q, -1)
+        output = self.dropout(self.graphconv_fc(output, adj_mx))
         output += residual
 
         if not self.normalize_before:

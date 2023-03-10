@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,10 +18,10 @@ def compute_event(event, non_pad_mask):
     """ Log-likelihood of events. """
 
     # add 1e-9 in case some events have 0 likelihood
-    event += math.pow(10, -9)
-    event.masked_fill_(~non_pad_mask.bool(), 1.0)
+    event += math.pow(10, -9)  # [batch,length]
+    event.masked_fill_(~non_pad_mask.bool(), 1.0)  # [batch,length]
 
-    result = torch.log(event)
+    result = torch.log(event)  # [batch,length]
     return result
 
 
@@ -37,16 +38,16 @@ def compute_integral_biased(all_lambda, time, non_pad_mask):
 
 def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
     """ Log-likelihood of non-events, using Monte Carlo integration. """
-
+    # time:[batch,length] non_pad_mask:[batch,length] type_mask:[batch,length,types]
     num_samples = 100
 
-    diff_time = (time[:, 1:] - time[:, :-1]) * non_pad_mask[:, 1:]
+    diff_time = (time[:, 1:] - time[:, :-1]) * non_pad_mask[:, 1:]  # [batch,length]
     temp_time = diff_time.unsqueeze(2) * \
-                torch.rand([*diff_time.size(), num_samples], device=data.device)
+                torch.rand([*diff_time.size(), num_samples], device=data.device)  # [batch,length,samples]
     temp_time /= (time[:, :-1] + 1).unsqueeze(2)
 
-    temp_hid = model.linear(data)[:, 1:, :]
-    temp_hid = torch.sum(temp_hid * type_mask[:, 1:, :], dim=2, keepdim=True)
+    temp_hid = model.linear(data)[:, 1:, :]  # [batch,length,types]
+    temp_hid = torch.sum(temp_hid * type_mask[:, 1:, :], dim=2, keepdim=True)  # type_mask:[batch,length,types]
 
     all_lambda = softplus(temp_hid + model.alpha * temp_time, model.beta)
     all_lambda = torch.sum(all_lambda, dim=2) / num_samples
@@ -58,18 +59,18 @@ def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
 def log_likelihood(model, data, time, types):
     """ Log-likelihood of sequence. """
 
-    non_pad_mask = get_non_pad_mask(types).squeeze(2)
+    non_pad_mask = get_non_pad_mask(types).squeeze(2)  # [batch,length]
 
-    type_mask = torch.zeros([*types.size(), model.num_types], device=data.device)
+    type_mask = torch.zeros([*types.size(), model.num_types], device=data.device)  # [batch,length,types]
     for i in range(model.num_types):
         type_mask[:, :, i] = (types == i + 1).bool().to(data.device)
 
-    all_hid = model.linear(data)
-    all_lambda = softplus(all_hid, model.beta)
-    type_lambda = torch.sum(all_lambda * type_mask, dim=2)
+    all_hid = model.linear(data)  # [batch,length,types]
+    all_lambda = softplus(all_hid, model.beta)  # [batch,length,types]
+    type_lambda = torch.sum(all_lambda * type_mask, dim=2)  # [batch,length,types]
 
     # event log-likelihood
-    event_ll = compute_event(type_lambda, non_pad_mask)
+    event_ll = compute_event(type_lambda, non_pad_mask)  # [batch,length]
     event_ll = torch.sum(event_ll, dim=-1)
 
     # non-event log-likelihood, either numerical integration or MC integration

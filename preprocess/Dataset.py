@@ -26,15 +26,15 @@ class EventData(torch.utils.data.Dataset):
         print("load weather info...")
         with open(file + domain + "/" + domain + "_weather_info.pkl", "rb") as f:
             self.weather_info = pickle.load(f)
-        print("load weather info next...")
-        with open(file + domain + "/" + domain + "_weather_info_next.pkl", "rb") as f:
-            self.weather_info_next = pickle.load(f)
-        print("load relative time 1...")
-        with open(file + domain + "/" + domain + "_relative_time1.pkl", "rb") as f:
-            self.relative_time1 = pickle.load(f)
-        print("load relative time 2...")
-        with open(file + domain + "/" + domain + "_relative_time2.pkl", "rb") as f:
-            self.relative_time2 = pickle.load(f)
+        # print("load weather info next...")
+        # with open(file + domain + "/" + domain + "_weather_info_next.pkl", "rb") as f:
+        #     self.weather_info_next = pickle.load(f)
+        # print("load relative time 1...")
+        # with open(file + domain + "/" + domain + "_relative_time1.pkl", "rb") as f:
+        #     self.relative_time1 = pickle.load(f)
+        # print("load relative time 2...")
+        # with open(file + domain + "/" + domain + "_relative_time2.pkl", "rb") as f:
+        #     self.relative_time2 = pickle.load(f)
 
         # self.relative_time(self.time)
 
@@ -62,8 +62,7 @@ class EventData(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         """ Each returned element is a list, which represents an event stream """
-        return self.time[idx], self.time_gap[idx], self.event_type[idx], self.weather_info[idx], self.weather_info_next[
-            idx], self.relative_time1[idx], self.relative_time2[idx]
+        return self.time[idx], self.time_gap[idx], self.event_type[idx], self.weather_info[idx]
 
 
 def pad_time(insts):
@@ -104,15 +103,15 @@ def pad_type(insts):
 def collate_fn(insts):
     """ Collate function, as required by PyTorch. """
 
-    time, time_gap, event_type, weather_info, weather_info_next, relative_time1, relative_time2 = list(zip(*insts))
+    time, time_gap, event_type, weather_info = list(zip(*insts))
     time = pad_time(time)
     time_gap = pad_time(time_gap)
     event_type = pad_type(event_type)
     weather_info = pad_weather(weather_info)
-    weather_info_next = pad_weather(weather_info_next)
-    relative_time1 = pad_time(relative_time1)
-    relative_time2 = pad_time(relative_time2)
-    return time, time_gap, event_type, weather_info, weather_info_next, relative_time1, relative_time2
+    # weather_info_next = pad_weather(weather_info_next)
+    # relative_time1 = pad_time(relative_time1)
+    # relative_time2 = pad_time(relative_time2)
+    return time, time_gap, event_type, weather_info
 
 
 def get_dataloader(file, batch_size, shuffle=True, domain="train"):

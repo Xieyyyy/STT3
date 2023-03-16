@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import Utils
@@ -105,6 +105,9 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
     total_event_rate = 0  # cumulative number of correct prediction
     total_num_event = 0  # number of total events
     total_num_pred = 0  # number of predictions
+    total_macro_F1 = 0
+    total_micro_F1 = 0
+    iter = 0
     with torch.no_grad():
         for batch in tqdm(validation_data, mininterval=2,
                           desc='  - (Validation) ', leave=False):
@@ -120,6 +123,7 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
             event_loss = -torch.sum(event_ll - non_event_ll)
             _, pred_num = Utils.type_loss(prediction[0], event_type, pred_loss_func)
             se = Utils.time_loss(prediction[1], event_time)
+            macro_F1, micro_F1 = Utils.F1(prediction[0], event_type)
 
             """ note keeping """
             total_event_ll += -event_loss.item()
@@ -127,9 +131,12 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
             total_event_rate += pred_num.item()
             total_num_event += event_type.ne(Constants.PAD).sum().item()
             total_num_pred += event_type.ne(Constants.PAD).sum().item() - event_time.shape[0]
+            total_macro_F1 += macro_F1.item()
+            total_micro_F1 += micro_F1.item()
+            iter += 1
 
     rmse = np.sqrt(total_time_se / total_num_pred)
-    return total_event_ll / total_num_event, total_event_rate / total_num_pred, rmse
+    return total_event_ll / total_num_event, total_event_rate / total_num_pred, rmse, total_macro_F1 / iter, total_micro_F1 / iter
 
 
 def train(model, training_data, validation_data, optimizer, scheduler, pred_loss_func, opt, sw=None):
@@ -138,6 +145,8 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
     valid_event_losses = []  # validation log-likelihood
     valid_pred_losses = []  # validation event type prediction accuracy
     valid_rmse = []  # validation event time prediction RMSE
+    valid_macro_F1 = []
+    valid_micro_F1 = []
     for epoch_i in range(opt.epoch):
         epoch = epoch_i + 1
         print('[ Epoch', epoch, ']')
@@ -150,18 +159,27 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
               .format(ll=train_event, type=train_type, rmse=train_time, elapse=(time.time() - start) / 60))
 
         start = time.time()
-        valid_event, valid_type, valid_time = eval_epoch(model, validation_data, pred_loss_func, opt)
+        valid_event, valid_type, valid_time, valid_macro, valid_micro = eval_epoch(model, validation_data,
+                                                                                   pred_loss_func, opt)
         print('  - (Testing)     loglikelihood: {ll: 8.5f}, '
-              'accuracy: {type: 8.5f}, RMSE: {rmse: 8.5f}, '
+              'accuracy: {type: 8.5f}, RMSE: {rmse: 8.5f}, macro F1: {macro_f1: 8.5f}, '
+              'micro F1: {micro_f1: 8.5f}, '
               'elapse: {elapse:3.3f} min'
-              .format(ll=valid_event, type=valid_type, rmse=valid_time, elapse=(time.time() - start) / 60))
+              .format(ll=valid_event, type=valid_type, rmse=valid_time, macro_f1=valid_macro,
+                      micro_f1=valid_micro, elapse=(time.time() - start) / 60))
 
         valid_event_losses += [valid_event]
         valid_pred_losses += [valid_type]
         valid_rmse += [valid_time]
+        valid_macro_F1 += [valid_macro]
+        valid_micro_F1 += [valid_micro]
+
         print('  - [Info] Maximum ll: {event: 8.5f}, '
-              'Maximum accuracy: {pred: 8.5f}, Minimum RMSE: {rmse: 8.5f}'
-              .format(event=max(valid_event_losses), pred=max(valid_pred_losses), rmse=min(valid_rmse)))
+              'Maximum accuracy: {pred: 8.5f}, Minimum RMSE: {rmse: 8.5f}, Maximum macro F1: {macro_f1: 8.5f},'
+              'Maximum macro F1: {micro_f1: 8.5f},'
+              .format(event=max(valid_event_losses), pred=max(valid_pred_losses), rmse=min(valid_rmse),
+                      macro_f1=max(valid_macro_F1),
+                      micro_f1=max(valid_micro_F1)))
 
         if opt.record:
             sw.add_scalar('loglikelihood/train', train_event, global_step=epoch_i)
@@ -170,11 +188,14 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
             sw.add_scalar('loglikelihood/valid', valid_event, global_step=epoch_i)
             sw.add_scalar('accuracy/valid', valid_type, global_step=epoch_i)
             sw.add_scalar('RMSE/valid', valid_time, global_step=epoch_i)
+            sw.add_scalar('Macro F1/valid', valid_macro, global_step=epoch_i)
+            sw.add_scalar('Micro F1/valid', valid_micro, global_step=epoch_i)
 
             # logging
             with open(opt.log, 'a') as f:
-                f.write('{epoch}, {ll: 8.5f}, {acc: 8.5f}, {rmse: 8.5f}\n'
-                        .format(epoch=epoch, ll=valid_event, acc=valid_type, rmse=valid_time))
+                f.write('{epoch}, {ll: 8.5f}, {acc: 8.5f}, {rmse: 8.5f}, {macro_f1: 8.5f}, {micro_f1: 8.5f}\n'
+                        .format(epoch=epoch, ll=valid_event, acc=valid_type, rmse=valid_time, macro_f1=valid_macro,
+                                micro_f1=valid_micro))
 
         scheduler.step()
 

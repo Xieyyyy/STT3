@@ -1,8 +1,10 @@
 import math
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import f1_score
 
 from transformer.Models import get_non_pad_mask
 
@@ -98,7 +100,21 @@ def type_loss(prediction, types, loss_func):
         loss = loss_func(prediction.transpose(1, 2), truth)
 
     loss = torch.sum(loss)
+
     return loss, correct_num
+
+
+def F1(prediction, types):
+    truth = types[..., 1:] - 1
+    prediction = prediction[:, :, :-1, :]
+
+    pred_type = torch.max(prediction, dim=-1)[1]
+    non_pad_pos = np.squeeze(np.argwhere(truth.reshape(-1).cpu().numpy() != -1), axis=-1)
+    non_pad_truth = truth.reshape(-1).cpu().numpy()[non_pad_pos]
+    non_pad_pred_type = pred_type.reshape(-1).cpu().numpy()[non_pad_pos]
+    macro_F1 = f1_score(non_pad_truth, non_pad_pred_type, average="macro")
+    micro_F1 = f1_score(non_pad_truth, non_pad_pred_type, average="micro")
+    return macro_F1, micro_F1
 
 
 def time_loss(prediction, event_time):

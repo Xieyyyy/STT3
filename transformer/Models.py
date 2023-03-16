@@ -7,7 +7,15 @@ from transformer.Layers import EventEncoderLayer, ValueEncoderLayer
 
 
 def get_non_pad_mask(seq):
-    """ Get the non-padding positions. """
+    """这段代码定义了一个名为get_non_pad_mask的函数，该函数用于获取序列中非填充位置的掩码。
+
+        函数的参数seq是一个三维张量，形状为[B, N, L]，其中B表示批量大小，N表示序列长度，L表示序列维度。
+        该函数首先通过断言语句检查输入张量的维度是否正确。
+
+        接下来，该函数通过seq.ne(Constants.PAD)语句创建了一个与输入张量形状相同的张量，该张量的值为1或0，其中非填充位置的值为1，填充位置的值为0。
+        Constants.PAD是一个常量，表示填充标记的值。
+
+        最后，该函数通过unsqueeze(-1)语句在最后一个维度上增加了一个维度，以便后续在非填充位置掩码上执行广播操作。函数返回一个掩码张量。 """
     # [B,N,L]
     assert seq.dim() == 3
     return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)

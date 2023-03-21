@@ -151,12 +151,12 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
         epoch = epoch_i + 1
         print('[ Epoch', epoch, ']')
 
-        start = time.time()
-        train_event, train_type, train_time = train_epoch(model, training_data, optimizer, pred_loss_func, opt)
-        print('  - (Training)    loglikelihood: {ll: 8.5f}, '
-              'accuracy: {type: 8.5f}, RMSE: {rmse: 8.5f}, '
-              'elapse: {elapse:3.3f} min'
-              .format(ll=train_event, type=train_type, rmse=train_time, elapse=(time.time() - start) / 60))
+        # start = time.time()
+        # train_event, train_type, train_time = train_epoch(model, training_data, optimizer, pred_loss_func, opt)
+        # print('  - (Training)    loglikelihood: {ll: 8.5f}, '
+        #       'accuracy: {type: 8.5f}, RMSE: {rmse: 8.5f}, '
+        #       'elapse: {elapse:3.3f} min'
+        #       .format(ll=train_event, type=train_type, rmse=train_time, elapse=(time.time() - start) / 60))
 
         start = time.time()
         valid_event, valid_type, valid_time, valid_macro, valid_micro = eval_epoch(model, validation_data,
@@ -217,6 +217,7 @@ def main():
     parser.add_argument('--d_k', type=int, default=16)
     parser.add_argument('--d_v', type=int, default=16)
     parser.add_argument('--num_types', type=int, default=10)
+    parser.add_argument('--pred_len', type=int, default=2)
 
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--n_layers', type=int, default=2)

@@ -38,6 +38,8 @@ class EventData(torch.utils.data.Dataset):
 
         # self.relative_time(self.time)
 
+        # sample_num, street, event_num
+
         self.length = len(self.time)
 
     def relative_time(self, time):

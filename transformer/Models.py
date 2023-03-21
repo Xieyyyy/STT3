@@ -6,41 +6,6 @@ import transformer.Constants as Constants
 from transformer.Layers import EventEncoderLayer, ValueEncoderLayer
 
 
-def get_non_pad_mask(seq):
-    """这段代码定义了一个名为get_non_pad_mask的函数，该函数用于获取序列中非填充位置的掩码。
-
-        函数的参数seq是一个三维张量，形状为[B, N, L]，其中B表示批量大小，N表示序列长度，L表示序列维度。
-        该函数首先通过断言语句检查输入张量的维度是否正确。
-
-        接下来，该函数通过seq.ne(Constants.PAD)语句创建了一个与输入张量形状相同的张量，该张量的值为1或0，其中非填充位置的值为1，填充位置的值为0。
-        Constants.PAD是一个常量，表示填充标记的值。
-
-        最后，该函数通过unsqueeze(-1)语句在最后一个维度上增加了一个维度，以便后续在非填充位置掩码上执行广播操作。函数返回一个掩码张量。 """
-    # [B,N,L]
-    assert seq.dim() == 3
-    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
-
-
-def get_attn_key_pad_mask(seq_k, seq_q):
-    """ For masking out the padding part of key sequence. """
-
-    # expand to fit the shape of key query attention matrix
-    len_q = seq_q.size(2)
-    padding_mask = seq_k.eq(Constants.PAD)
-    padding_mask = padding_mask.unsqueeze(2).expand(-1, -1, len_q, -1)  # b x lq x lk
-    return padding_mask
-
-
-def get_subsequent_mask(seq):
-    """ For masking out the subsequent info, i.e., masked self-attention. """
-
-    sz_b, n, len_s = seq.size()
-    subsequent_mask = torch.triu(
-        torch.ones((len_s, len_s), device=seq.device, dtype=torch.uint8), diagonal=1)
-    subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(0).expand(sz_b, n, -1, -1)  # b x n x ls x ls
-    return subsequent_mask  # b x n x ls x ls
-
-
 class ValueEncoder(nn.Module):
     def __init__(self, enc_dim, d_model, d_inner,
                  n_layers, n_head, d_k, d_v, dropout, device):
@@ -57,7 +22,7 @@ class ValueEncoder(nn.Module):
             ValueEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
             for _ in range(n_layers)])
 
-    def temporal_enc(self, time):
+    def temporal_enc(self, time, non_pad_mask):
         """
         Input: batch*seq_len.
         Output: batch*seq_len*d_model.
@@ -66,15 +31,18 @@ class ValueEncoder(nn.Module):
         result = time.unsqueeze(-1) / self.position_vec
         result[:, :, 0::2] = torch.sin(result[:, :, 0::2])
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
-        return result
+        return result * non_pad_mask
 
-    def forward(self, enc_in, event_time, adj_mx):
-        tem_enc = self.temporal_enc(event_time)
+    def forward(self, enc_in, event_time, non_pad_mask, slf_attn_mask, adj_mx):
+        tem_enc = self.temporal_enc(event_time, non_pad_mask)
         enc_output = self.value_emb(enc_in)
         for enc_layer in self.layer_stack:
             enc_output += tem_enc
             enc_output, _ = enc_layer(
-                enc_output, adj_mx)
+                enc_output,
+                adj_mx,
+                non_pad_mask=non_pad_mask,
+                slf_attn_mask=slf_attn_mask)
         return enc_output
 
 
@@ -112,7 +80,7 @@ class EventEncoder(nn.Module):
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
         return result * non_pad_mask
 
-    def forward(self, event_type, event_time, non_pad_mask, adj_mx):
+    def forward(self, event_type, event_time, non_pad_mask, slf_attn_mask, adj_mx):
         """ Encode event sequences via masked self-attention. """
 
         # event_type: [B,L] -> [B,N,L]
@@ -121,10 +89,6 @@ class EventEncoder(nn.Module):
 
         # prepare attention masks
         # slf_attn_mask is where we cannot look, i.e., the future and the padding
-        slf_attn_mask_subseq = get_subsequent_mask(event_type)
-        slf_attn_mask_keypad = get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type)
-        slf_attn_mask_keypad = slf_attn_mask_keypad.type_as(slf_attn_mask_subseq)
-        slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
         tem_enc = self.temporal_enc(event_time, non_pad_mask)
         enc_output = self.event_emb(event_type)
@@ -216,8 +180,8 @@ class Model(nn.Module):
             d_inner=d_inner,
             n_layers=n_layers,
             n_head=n_head,
-            d_k=d_k,
-            d_v=d_v,
+            d_k=d_k * 2,
+            d_v=d_v * 2,
             dropout=dropout,
             device=device
         )
@@ -253,15 +217,20 @@ class Model(nn.Module):
                 time_prediction: batch*seq_len.
         """
 
-        # event_type: [B,L]
-        non_pad_mask = get_non_pad_mask(event_type)
+        # event_type: [B,N,L]
+        non_pad_mask = self.get_non_pad_mask(event_type)
+        slf_attn_mask_subseq = self.get_subsequent_mask(event_type)
+        slf_attn_mask_keypad = self.get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type)
+        slf_attn_mask_keypad = slf_attn_mask_keypad.type_as(slf_attn_mask_subseq)
+        slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
         # non_pad_mask: [B,L,1]\in{0,1}
         # event_time: [B,L]
-        event_enc_output = self.event_encoder(event_type, event_time, non_pad_mask, adj_mx)
-        weather_enc_output = self.value_encoder(weather_info, event_time, adj_mx)
+        event_enc_output = self.event_encoder(event_type, event_time, non_pad_mask, slf_attn_mask, adj_mx)
+        weather_enc_output = self.value_encoder(weather_info, event_time, non_pad_mask, slf_attn_mask, adj_mx)
 
         combine_enc_output = self.combine_encoder(torch.cat([event_enc_output, weather_enc_output], dim=-1), event_time,
+                                                  non_pad_mask, slf_attn_mask,
                                                   adj_mx)
         # enc_output = self.rnn(enc_output, non_pad_mask)
 
@@ -270,3 +239,35 @@ class Model(nn.Module):
         type_prediction = self.type_predictor(combine_enc_output, non_pad_mask)
 
         return combine_enc_output, (type_prediction, time_prediction)
+
+    def get_non_pad_mask(self, seq):
+        """这段代码定义了一个名为get_non_pad_mask的函数，该函数用于获取序列中非填充位置的掩码。
+
+            函数的参数seq是一个三维张量，形状为[B, N, L]，其中B表示批量大小，N表示序列长度，L表示序列维度。
+            该函数首先通过断言语句检查输入张量的维度是否正确。
+
+            接下来，该函数通过seq.ne(Constants.PAD)语句创建了一个与输入张量形状相同的张量，该张量的值为1或0，其中非填充位置的值为1，填充位置的值为0。
+            Constants.PAD是一个常量，表示填充标记的值。
+
+            最后，该函数通过unsqueeze(-1)语句在最后一个维度上增加了一个维度，以便后续在非填充位置掩码上执行广播操作。函数返回一个掩码张量。 """
+        # [B,N,L]
+        assert seq.dim() == 3
+        return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
+
+    def get_attn_key_pad_mask(self, seq_k, seq_q):
+        """ For masking out the padding part of key sequence. """
+
+        # expand to fit the shape of key query attention matrix
+        len_q = seq_q.size(2)
+        padding_mask = seq_k.eq(Constants.PAD)  # b x n x ls
+        padding_mask = padding_mask.unsqueeze(2).expand(-1, -1, len_q, -1)  # b x n x lq x lk
+        return padding_mask
+
+    def get_subsequent_mask(self, seq):
+        """ For masking out the subsequent info, i.e., masked self-attention. """
+
+        sz_b, n, len_s = seq.size()  # b x n x ls
+        subsequent_mask = torch.triu(
+            torch.ones((len_s, len_s), device=seq.device, dtype=torch.uint8), diagonal=1)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(0).expand(sz_b, n, -1, -1)  # b x n x ls x ls
+        return subsequent_mask  # b x n x ls x ls

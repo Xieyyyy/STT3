@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 
-from transformer.Models import get_non_pad_mask
+from transformer import Constants
 
 
 def softplus(x, beta):
@@ -60,6 +60,11 @@ def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
 
 def log_likelihood(model, data, time, types):
     """ Log-likelihood of sequence. """
+
+    def get_non_pad_mask(seq):
+        # [B,N,L]
+        assert seq.dim() == 3
+        return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
 
     non_pad_mask = get_non_pad_mask(types).squeeze(-1)  # [b,n,l]
 

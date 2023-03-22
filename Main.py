@@ -164,7 +164,7 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
         print('  - (Testing)     loglikelihood: {ll: 8.5f}, '
               'accuracy: {type: 8.5f}, RMSE: {rmse: 8.5f}, macro F1: {macro_f1: 8.5f}, '
               'micro F1: {micro_f1: 8.5f}, '
-              'elapse: {elapse:3.3f} min'
+              'elapse: {elapse: 3.3f} min'
               .format(ll=valid_event, type=valid_type, rmse=valid_time, macro_f1=valid_macro,
                       micro_f1=valid_micro, elapse=(time.time() - start) / 60))
 

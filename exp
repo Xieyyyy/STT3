@@ -1,1 +1,1 @@
-python Main.py --dev cuda:6 --log ./logs/baseline_interpolation.txt --epoch 100 --batch_size 32 --record
+python Main.py --dev cuda:6 --log ./logs/baseline.txt --epoch 100 --batch_size 32 --record

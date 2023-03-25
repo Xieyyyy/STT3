@@ -1,1 +1,1 @@
-python Main.py --dev cuda:4 --log ./logs/baseline_mask_weather.txt --epoch 100 --batch_size 32 --record
+python Main.py --dev cuda:7 --log ./logs/baseline_mask_weather.txt --epoch 100 --batch_size 32 --record

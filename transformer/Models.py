@@ -53,6 +53,7 @@ class ValueEncoder(nn.Module):
             device=device)
 
         self.value_emb = nn.Linear(enc_dim, d_model)
+        self.time_emb_proj = nn.Linear(d_model, d_model)
         self.layer_stack = nn.ModuleList([
             ValueEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
             for _ in range(n_layers)])
@@ -66,7 +67,7 @@ class ValueEncoder(nn.Module):
         result = time.unsqueeze(-1) / self.position_vec
         result[:, :, 0::2] = torch.sin(result[:, :, 0::2])
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
-        return result
+        return self.time_emb_proj(result)
 
     def forward(self, enc_in, event_time, adj_mx):
         tem_enc = self.temporal_enc(event_time)
@@ -96,6 +97,7 @@ class EventEncoder(nn.Module):
 
         # event type embedding
         self.event_emb = nn.Embedding(num_types + 1, d_model, padding_idx=Constants.PAD)
+        self.time_emb_proj = nn.Linear(d_model, d_model)
 
         self.layer_stack = nn.ModuleList([
             EventEncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout, normalize_before=False)
@@ -110,7 +112,7 @@ class EventEncoder(nn.Module):
         result = time.unsqueeze(-1) / self.position_vec
         result[:, :, 0::2] = torch.sin(result[:, :, 0::2])
         result[:, :, 1::2] = torch.cos(result[:, :, 1::2])
-        return result * non_pad_mask
+        return self.time_emb_proj(result) * non_pad_mask
 
     def forward(self, event_type, event_time, non_pad_mask, adj_mx):
         """ Encode event sequences via masked self-attention. """

@@ -1,1 +1,3 @@
-python Main.py --dev cuda:6 --log ./logs/baseline.txt --epoch 100 --batch_size 32 --record
+python Main.py --dev cuda:4 --log ./logs/baseline.txt --epoch 100 --batch_size 32 --record
+
+python Main.py --dev cuda:2 --log ./logs/baseline_dimx2.txt --epoch 100 --batch_size 16 --d_model 128 --record

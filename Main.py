@@ -1,4 +1,5 @@
 import argparse
+import os
 import pickle
 import time
 
@@ -142,6 +143,12 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
 def train(model, training_data, validation_data, optimizer, scheduler, pred_loss_func, opt, sw=None):
     """ Start training. """
 
+    last_val_acc = 0.0
+    PATH = None
+    if opt.save_model:
+        with open("./models/args_" + str(opt.tag) + ".pkl", "wb") as f:
+            pickle.dump(opt, f)
+        torch.save(model, "./models/base_" + str(opt.tag) + ".pkl")
     valid_event_losses = []  # validation log-likelihood
     valid_pred_losses = []  # validation event type prediction accuracy
     valid_rmse = []  # validation event time prediction RMSE
@@ -197,6 +204,17 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
                         .format(epoch=epoch, ll=valid_event, acc=valid_type, rmse=valid_time, macro_f1=valid_macro,
                                 micro_f1=valid_micro))
 
+        if opt.save_model:
+            if valid_type > last_val_acc:
+                print("val acc:" + str(float(valid_type)) + " > last val acc:" + str(float(last_val_acc)))
+                if PATH is not None:
+                    os.remove(PATH)
+                    print("Remove:" + PATH)
+                last_val_acc = valid_type
+                PATH = "./models/" + opt.tag + "_" + str(epoch_i) + ".pth"
+                torch.save(model.state_dict(), PATH)
+                print("Save model as:" + PATH)
+
         scheduler.step()
 
 
@@ -226,10 +244,13 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--smooth', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-3)
+    # parser.add_argument('--save_model', action="store_true")
 
     parser.add_argument('--log', type=str, default='./logs/baseline.txt')
+    parser.add_argument('--tag', type=str, default='baseline')
     parser.add_argument("--dev", type=str, default="cpu")
     parser.add_argument('--record', action="store_true")
+    parser.add_argument('--save_model', action="store_true")
 
     opt = parser.parse_args()
 

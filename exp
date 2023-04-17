@@ -1,3 +1,3 @@
-python Main.py --dev cuda:3 --log ./logs/baseline.txt --epoch 100 --batch_size 32 --record --save_model
+python Main.py --dev cuda:5 --log ./logs/baseline_sa3.txt --epoch 100 --batch_size 32 --record --step_away 3
 
 python Main.py --dev cuda:2 --log ./logs/baseline_dimx2.txt --epoch 100 --batch_size 16 --d_model 128 --record

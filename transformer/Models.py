@@ -7,15 +7,7 @@ from transformer.Layers import EventEncoderLayer, ValueEncoderLayer
 
 
 def get_non_pad_mask(seq):
-    """这段代码定义了一个名为get_non_pad_mask的函数，该函数用于获取序列中非填充位置的掩码。
-
-        函数的参数seq是一个三维张量，形状为[B, N, L]，其中B表示批量大小，N表示序列长度，L表示序列维度。
-        该函数首先通过断言语句检查输入张量的维度是否正确。
-
-        接下来，该函数通过seq.ne(Constants.PAD)语句创建了一个与输入张量形状相同的张量，该张量的值为1或0，其中非填充位置的值为1，填充位置的值为0。
-        Constants.PAD是一个常量，表示填充标记的值。
-
-        最后，该函数通过unsqueeze(-1)语句在最后一个维度上增加了一个维度，以便后续在非填充位置掩码上执行广播操作。函数返回一个掩码张量。 """
+    """标记被padidng的位置 """
     # [B,N,L]
     assert seq.dim() == 3
     return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
@@ -121,8 +113,8 @@ class EventEncoder(nn.Module):
 
         # prepare attention masks
         # slf_attn_mask is where we cannot look, i.e., the future and the padding
-        slf_attn_mask_subseq = get_subsequent_mask(event_type)
-        slf_attn_mask_keypad = get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type)
+        slf_attn_mask_subseq = get_subsequent_mask(event_type) # mask注意力矩阵
+        slf_attn_mask_keypad = get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type) # mask key矩阵
         slf_attn_mask_keypad = slf_attn_mask_keypad.type_as(slf_attn_mask_subseq)
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
@@ -253,7 +245,7 @@ class Model(nn.Module):
                 time_prediction: batch*seq_len.
         """
 
-        # event_type: [B,L]
+        # event_type: [B,N,L]
         non_pad_mask = get_non_pad_mask(event_type)
 
         # non_pad_mask: [B,L,1]\in{0,1}

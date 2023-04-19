@@ -104,6 +104,34 @@ def type_loss(prediction, types, loss_func):
     return loss, correct_num
 
 
+def type_loss_test(prediction, types, loss_func):
+    """ Event prediction loss, cross entropy or label smoothing. """
+
+    # convert [1,2,3] based types to [0,1,2]; also convert padding events to -1
+    truth = types[:, 1:] - 1  # 无需预测第一个事件，因此这里用不到第一个。
+
+    # 输入的prediction：bs*len*num_types
+    # 下面这个操作把去掉prediction每个事件流的最后一行。也就是每个事件流的最后一个事件。
+    # 因为每个事件流的最后一个事件无法验证其是否预测准确了。
+    # prediction = prediction[:, :-1, :]
+
+    pred_type = torch.max(prediction, dim=-1)[1]
+    # print(f'pred_type.shape: {pred_type.shape}')  # bs * max_len
+    # 这里pred_type不用-1是因为prediction的shape:bs*len*num_types,
+    # prediction[:, :, i]就表示了真实的事件类型i
+    correct_num = torch.sum(pred_type[:, :-1] == truth)
+
+    prediction = prediction[:, :-1, :]
+    # compute cross entropy loss
+    if isinstance(loss_func, LabelSmoothingLoss):
+        loss = loss_func(prediction, truth)
+    else:
+        loss = loss_func(prediction.transpose(1, 2), truth)
+
+    loss = torch.sum(loss)
+    return loss, correct_num, pred_type + 1  # pred_type range from 0 to num_types -1。这里要加一。
+
+
 def F1(prediction, types):
     truth = types[..., 1:] - 1
     prediction = prediction[:, :, :-1, :]

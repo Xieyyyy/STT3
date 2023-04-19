@@ -113,8 +113,8 @@ class EventEncoder(nn.Module):
 
         # prepare attention masks
         # slf_attn_mask is where we cannot look, i.e., the future and the padding
-        slf_attn_mask_subseq = get_subsequent_mask(event_type) # mask注意力矩阵
-        slf_attn_mask_keypad = get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type) # mask key矩阵
+        slf_attn_mask_subseq = get_subsequent_mask(event_type)  # mask注意力矩阵
+        slf_attn_mask_keypad = get_attn_key_pad_mask(seq_k=event_type, seq_q=event_type)  # mask key矩阵
         slf_attn_mask_keypad = slf_attn_mask_keypad.type_as(slf_attn_mask_subseq)
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
@@ -256,6 +256,7 @@ class Model(nn.Module):
         combine_enc_output = self.combine_encoder(torch.cat([event_enc_output, weather_enc_output], dim=-1), event_time,
                                                   adj_mx)
         # enc_output = self.rnn(enc_output, non_pad_mask)
+
 
         time_prediction = self.time_predictor(combine_enc_output, non_pad_mask)
 

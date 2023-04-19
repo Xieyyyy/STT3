@@ -16,6 +16,21 @@ from preprocess.Dataset import get_dataloader
 from transformer.Models import Model
 
 
+def get_future_mask(seq, time_future):
+    """ pad the predict event """
+    assert seq.dim() == 2
+    gt = ~(seq.gt(time_future)).to(seq.device)
+    eq0 = seq.eq(Constants.PAD).to(seq.device)
+    return (gt ^ eq0).type(torch.long)  # 相当于gt - eq0
+
+
+def get_non_pad_mask(seq):
+    """ Get the non-padding positions. """
+
+    assert seq.dim() == 2  # 输入的seq一定要是2维的
+    return seq.ne(Constants.PAD).type(torch.float)
+
+
 def prepare_dataloader(opt):
     """ Load data and prepare dataloader. """
 
@@ -41,6 +56,7 @@ def prepare_dataloader(opt):
     with open(opt.data + "adj_mx.pkl", "rb") as f:
         adj_mx = pickle.load(f)
     return trainloader, testloader, opt.num_types, adj_mx
+    # return None, testloader, opt.num_types, adj_mx
 
 
 def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
@@ -70,7 +86,7 @@ def train_epoch(model, training_data, optimizer, pred_loss_func, opt):
         event_loss = -torch.sum(event_ll - non_event_ll)
 
         # type prediction
-        pred_loss, pred_num_event = Utils.type_loss(prediction[0], event_type, pred_loss_func)
+        pred_loss, pred_num_event, _ = Utils.type_loss(prediction[0], event_type, pred_loss_func)
 
         # time prediction
         se = Utils.time_loss(prediction[1], event_time)
@@ -116,25 +132,83 @@ def eval_epoch(model, validation_data, pred_loss_func, opt):
             event_time, time_gap, event_type, weather_info = map(
                 lambda x: x.to(opt.device), batch)
 
-            """ forward """
-            enc_out, prediction = model(event_type, event_time, weather_info, opt.adj_mx)
+            batch_sz, num_region = event_type.shape[0], event_type.shape[1]
 
-            """ compute loss """
-            event_ll, non_event_ll = Utils.log_likelihood(model, enc_out, event_time, event_type)
-            event_loss = -torch.sum(event_ll - non_event_ll)
-            _, pred_num = Utils.type_loss(prediction[0], event_type, pred_loss_func)
-            se = Utils.time_loss(prediction[1], event_time)
-            macro_F1, micro_F1 = Utils.F1(prediction[0], event_type)
+            future_mask = get_future_mask(event_time.reshape(batch_sz * num_region, -1),
+                                          opt.pred_time)  # bs* L， mask待预测的部分
+            future_mask_weather = future_mask.unsqueeze(-1).repeat(1, 1, opt.d_value)  # bs * L * 6
+            non_pad_mask = get_non_pad_mask(event_type.reshape(batch_sz * num_region, -1))  # bs* L
+            pos = future_mask.sum(dim=1, keepdim=True).long().to(opt.device)  # bsn * 1
 
-            """ note keeping """
-            total_event_ll += -event_loss.item()
-            total_time_se += se.item()
-            total_event_rate += pred_num.item()
-            total_num_event += event_type.ne(Constants.PAD).sum().item()
-            total_num_pred += event_type.ne(Constants.PAD).sum().item() - event_time.shape[0]
-            total_macro_F1 += macro_F1.item()
-            total_micro_F1 += micro_F1.item()
-            iter += 1
+            eff_seq_idx = torch.nonzero(
+                torch.where(pos == 0, torch.zeros_like(pos), torch.ones_like(pos)).squeeze(-1))[:, 0]  # 96
+
+            max_len = event_type.reshape(batch_sz * num_region, -1)[eff_seq_idx].shape[1]
+            max_pos = max(future_mask.reshape(batch_sz * num_region, -1)[eff_seq_idx].sum(dim=1))
+
+            input_type = (event_type.reshape(batch_sz * num_region, -1) * future_mask).reshape(batch_sz, num_region, -1)
+            input_time = (event_time.reshape(batch_sz * num_region, -1) * future_mask).reshape(batch_sz, num_region, -1)
+            input_weather = (
+                    weather_info.reshape(batch_sz * num_region, -1, opt.d_value) * future_mask_weather).reshape(
+                batch_sz, num_region, -1, opt.d_value)
+
+            for i in range(max_len - max_pos - 1):
+                """ forward """
+                enc_out, prediction = model(input_type, input_time, input_weather, opt.adj_mx)
+
+                """ compute loss """
+                event_ll, non_event_ll = Utils.log_likelihood(model, enc_out, event_time, event_type)
+                event_loss = -torch.sum(event_ll - non_event_ll)
+                _, pred_num, pred_type = Utils.type_loss(prediction[0], event_type, pred_loss_func)
+                se = Utils.time_loss(prediction[1], event_time)
+                macro_F1, micro_F1 = Utils.F1(prediction[0], event_type)
+
+                """ note keeping """
+                total_event_ll += -event_loss.item()
+                total_time_se += se.item()
+                total_event_rate += pred_num.item()
+                total_num_event += event_type.ne(Constants.PAD).sum().item()
+                total_num_pred += event_type.ne(Constants.PAD).sum().item() - event_time.shape[0]
+                total_macro_F1 += macro_F1.item()
+                total_micro_F1 += micro_F1.item()
+                iter += 1
+
+                """ for iteration """
+                pred_next_type = pred_type.reshape(batch_sz * num_region, -1).clone()
+                pred_type = pred_type.reshape(batch_sz * num_region, -1)[eff_seq_idx].gather(1, pos[eff_seq_idx] - 1)
+                pred_next_type[eff_seq_idx] = pred_type
+
+                pred_next_time = prediction[1].squeeze(-1).reshape(batch_sz * num_region, -1).clone()
+                pred_time = prediction[1].squeeze(-1).reshape(batch_sz * num_region, -1)[eff_seq_idx].gather(1, pos[
+                    eff_seq_idx] - 1)
+                pred_next_time[eff_seq_idx] = pred_time
+
+                input_type = input_type.reshape(batch_sz * num_region, -1)
+                input_type[eff_seq_idx] = input_type[eff_seq_idx].clone(). \
+                    scatter_add_(1, pos[eff_seq_idx] + 1, pred_next_type[eff_seq_idx])
+
+                input_time = input_time.reshape(batch_sz * num_region, -1)
+                input_time[eff_seq_idx] = input_time[eff_seq_idx].clone(). \
+                    scatter_add_(1, pos[eff_seq_idx] + 1, pred_next_time[eff_seq_idx])
+
+                input_type = (input_type.reshape(batch_sz * num_region, -1) * non_pad_mask).type(torch.long)
+                input_time = input_time.reshape(batch_sz * num_region, -1) * non_pad_mask
+
+                pos += 1
+
+                future_mask = future_mask.reshape(batch_sz * num_region, -1).clone(). \
+                    scatter_add_(1, pos, torch.ones_like(pos).type_as(future_mask.reshape(batch_sz * num_region, -1)))
+
+                future_mask_weather = future_mask.reshape(batch_sz * num_region, -1).unsqueeze(-1). \
+                    repeat(1, 1, opt.d_value)
+
+                input_weather = input_weather.reshape(batch_sz * num_region, -1, opt.d_value) * \
+                                future_mask_weather.reshape(batch_sz * num_region, -1, opt.d_value) * \
+                                non_pad_mask.unsqueeze(-1).repeat(1, 1, opt.d_value)
+
+                input_time, input_type, input_weather = input_time.reshape(batch_sz, num_region, -1), \
+                                                        input_type.reshape(batch_sz, num_region, -1), \
+                                                        input_weather.reshape(batch_sz, num_region, -1, opt.d_value)
 
     rmse = np.sqrt(total_time_se / total_num_pred)
     return total_event_ll / total_num_event, total_event_rate / total_num_pred, rmse, total_macro_F1 / iter, total_micro_F1 / iter
@@ -239,6 +313,7 @@ def main():
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--n_layers', type=int, default=2)
     parser.add_argument('--scaletimeloss', type=float, default=1e-3)
+    parser.add_argument('--pred_time', type=int, default=6)
 
     parser.add_argument('--dropout', type=float, default=0.)
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -309,4 +384,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

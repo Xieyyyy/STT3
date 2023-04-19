@@ -101,7 +101,8 @@ def type_loss(prediction, types, loss_func):
 
     loss = torch.sum(loss)
 
-    return loss, correct_num
+
+    return loss, correct_num, pred_type
 
 
 def type_loss_test(prediction, types, loss_func):

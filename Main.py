@@ -149,9 +149,9 @@ def train(model, training_data, validation_data, optimizer, scheduler, pred_loss
         with open("./models/args_" + str(opt.tag) + ".pkl", "wb") as f:
             pickle.dump(opt, f)
         torch.save(model, "./models/base_" + str(opt.tag) + ".pkl")
-    valid_event_losses = []  # validation log-likelihood
+    valid_event_losses = [] # validation log-likelihood
     valid_pred_losses = []  # validation event type prediction accuracy
-    valid_rmse = []  # validation event time prediction RMSE
+    valid_rmse = []         # validation event time prediction RMSE
     valid_macro_F1 = []
     valid_micro_F1 = []
     for epoch_i in range(opt.epoch):
